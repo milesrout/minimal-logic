@@ -4,9 +4,10 @@
 
 module Minimal where
 
-import Text.Printf (printf)
+import Control.Monad.Except
 import Data.Set (Set, (\\))
 import qualified Data.Set as Set
+import Text.Printf (printf)
 
 data Formula
     = Proposition String
@@ -34,38 +35,14 @@ instance Show Formula where
     show (Disjunction a b) = printf "(%s \x2228 %s)" (show a) (show b)
     show (Implication a b) = printf "(%s \x2192 %s)" (show a) (show b)
 
-{-
- - NAME         NUM ASSUMPS     STACK
- - Assume       +1              { - a }
- - ConjIntro    0               { a b - a^b }
- - LDisjIntro   0               { a - a^b }
- - RDisjIntro   0               { b - a^b }
- - LConjElim    0               { a^b - b }
- - RConjElim    0               { a^b - a }
- - DisjElim     2               { avb a>c b>c - c }
- -
- - Assume     : takes F and gives a proof of F from {F}
- - ConjIntro  : takes a proof of A from G and a proof of B from H and
- -              gives a proof of A^B from G U H
- - LDisjIntro : takes a proof of B from G and gives a proof of AvB from G
- - LDisjIntro : takes a A and proof of B from G 
- -              and gives a proof of AvB from G
- - RDisjIntro : takes a proof of A from G and B
- -              and gives a proof of AvB from G
- - LConjElim  : takes a proof of A^B from G and gives a proof of B from G
- - RConjElim  : takes a proof of A^B from G and gives a proof of A from G
- - DisjElim   : takes a proof of AvB from G, a proof of C from H1 U {A}
- -              and a proof of C from H2 U {B}, and gives a proof of 
- -              C from G U H1 U H2.
- - ImplElim   : takes a proof of A>B from G and a proof of A from H
- -              and gives a proof of B from G U H
- - ImplIntro  : takes a proof of B from G U {A} and gives a proof of
- -              A>B from G
- -}
-
-data Deduction = Deduction { assumptions :: Set Formula,
-                             conclusion  :: Formula
+data Deduction = Deduction { assumptions :: Set Formula
+                           , conclusion  :: Formula
                            } deriving (Show)
+
+type Proof = Except String Deduction
+
+runProof :: Proof -> Either String Deduction
+runProof = runExcept
 
 assume' :: Formula -> Deduction
 assume' f = Deduction (Set.singleton f) f
@@ -75,11 +52,11 @@ implIntro' f d = Deduction (Set.delete f a) (f #> c)
     where a = assumptions d
           c = conclusion d
 
-implElim :: Deduction -> Deduction -> Maybe Deduction
+implElim :: Deduction -> Deduction -> Proof
 implElim (Deduction aA a') (Deduction aAtoB (Implication a b))
-    | (a' == a) = Just $ (Deduction (Set.union aA aAtoB) b)
-    | otherwise = Nothing
-implElim _ _ = Nothing
+    | (a' == a) = return (Deduction (Set.union aA aAtoB) b)
+    | otherwise = throwError "conclusion of first argument must be the antecedent of the conclusion of the second argument"
+implElim _ _ = throwError "second argument to implElim must be an implication"
 
 conjIntro' :: Deduction -> Deduction -> Deduction
 conjIntro' l r = Deduction (Set.union al ar) (cl #& cr)
@@ -96,43 +73,43 @@ rightDisjIntro' :: Deduction -> Formula -> Deduction
 rightDisjIntro' d f = Deduction (assumptions d) (l #| f)
     where l = conclusion d
 
-leftConjElim :: Deduction -> Maybe Deduction
+leftConjElim :: Deduction -> Proof
 leftConjElim d = case (conclusion d) of
-    (Conjunction _ r) -> Just d { conclusion = r }
-    _                 -> Nothing
+    (Conjunction _ r) -> return d { conclusion = r }
+    _                 -> throwError "argument must be a conjunction"
 
-rightConjElim :: Deduction -> Maybe Deduction
+rightConjElim :: Deduction -> Proof
 rightConjElim d = case (conclusion d) of
-    (Conjunction l _) -> Just d { conclusion = l }
-    _                 -> Nothing
+    (Conjunction l _) -> return d { conclusion = l }
+    _                 -> throwError "argument must be a conjunction"
 
-disjElim :: Deduction -> Deduction -> Deduction -> Maybe Deduction
+disjElim :: Deduction -> Deduction -> Deduction -> Proof
 disjElim avb atoc btoc
     | conclusion atoc == conclusion btoc = disjElimSame
-    | otherwise                          = Nothing
+    | otherwise = throwError "conclusion of second arg and conclusion of third arg must be equal"
     where disjElimSame = case (conclusion avb) of
-              (Disjunction a b) -> Just (Deduction (Set.unions [g, hA, hB]) c)
+              (Disjunction a b) -> return (Deduction (Set.unions [g, hA, hB]) c)
                 where g = assumptions avb
                       hA = assumptions atoc \\ Set.singleton a
                       hB = assumptions btoc \\ Set.singleton b
                       c = conclusion atoc
-              _                 -> Nothing
+              _ -> throwError "conclusion of first arg must be a disjunction"
 
 -- These allow for a more consistent syntax when doing proofs
-assume :: Formula -> Maybe Deduction
-assume f = Just $ assume' f
+assume :: Formula -> Proof
+assume f = return $ assume' f
 
-conjIntro :: Deduction -> Deduction -> Maybe Deduction
-conjIntro l r = Just $ conjIntro' l r
+conjIntro :: Deduction -> Deduction -> Proof
+conjIntro l r = return $ conjIntro' l r
 
-implIntro :: Formula -> Deduction -> Maybe Deduction
-implIntro f d = Just $ implIntro' f d
+implIntro :: Formula -> Deduction -> Proof
+implIntro f d = return $ implIntro' f d
 
-leftDisjIntro :: Formula -> Deduction -> Maybe Deduction
-leftDisjIntro f d = Just $ leftDisjIntro' f d
+leftDisjIntro :: Formula -> Deduction -> Proof
+leftDisjIntro f d = return $ leftDisjIntro' f d
 
-rightDisjIntro :: Deduction -> Formula -> Maybe Deduction
-rightDisjIntro d f = Just $ rightDisjIntro' d f
+rightDisjIntro :: Deduction -> Formula -> Proof
+rightDisjIntro d f = return $ rightDisjIntro' d f
 
 exampleVacuousIntro = do
     let p = Proposition "P"
