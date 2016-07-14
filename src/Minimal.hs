@@ -1,6 +1,4 @@
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE ViewPatterns, PatternSynonyms, PatternGuards #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 module Minimal where
 
@@ -16,6 +14,7 @@ data Formula
     | Implication Formula Formula
     deriving (Eq, Ord)
 
+-- These are just shorthand
 (#&) :: Formula -> Formula -> Formula
 a #& b = Conjunction a b
 
@@ -25,9 +24,13 @@ a #| b = Disjunction a b
 (#>) :: Formula -> Formula -> Formula
 a #> b = Implication a b
 
+-- These 'pattern synonyms' allow pattern-matching on Bottom and (Not f). 
 pattern Bottom = Proposition "\x22A5"
 pattern Not f = Implication f Bottom
 
+-- The Unicode literals are the Unicode equivalents of LaTeX's \neg (\lnot),
+-- \wedge (\land), \vee (\lor) and \to respectively.
+-- This specifies how a Formula should be converted into a string.
 instance Show Formula where
     show (Proposition s)   = s
     show (Not f)           = printf "\x00AC%s" (show f)
@@ -39,10 +42,15 @@ data Deduction = Deduction { assumptions :: Set Formula
                            , conclusion  :: Formula
                            } deriving (Show)
 
+-- Except is like Either (sum type) but explicitly for representing errors.
 type Proof = Except String Deduction
 
 runProof :: Proof -> Either String Deduction
 runProof = runExcept
+
+-- The quoted versions of these functions are ones that can't fail, so return
+-- Deduction instead of Proof. Unquoted versions are defined below that return
+-- a Proof for consistency.
 
 assume' :: Formula -> Deduction
 assume' f = Deduction (Set.singleton f) f

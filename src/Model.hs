@@ -14,7 +14,7 @@ type PropositionalSymbol = String
 
 -- Kripke "possible world" semantics (see http://arxiv.org/pdf/1606.08092v1.pdf)
 data Model = Model
-    { abnormalWorlds :: Set World
+    { abnormalWorlds :: Set World -- the worlds where Bottom is forced
     , rootWorld      :: World
     } deriving (Eq, Ord, Show)
 
@@ -36,7 +36,6 @@ setFlatten = Set.unions . Set.toList
 cone :: World -> Set World
 cone w = ((Set.insert w) . setFlatten . (Set.map cone) . childWorlds) w
 
-
 checkModel :: Formula -> Model -> Bool
 checkModel f m = and [checkWorld f w | w <- (Set.toList . cone . rootWorld) m]
     where checkWorld :: Formula -> World -> Bool
@@ -45,6 +44,5 @@ checkModel f m = and [checkWorld f w | w <- (Set.toList . cone . rootWorld) m]
           checkWorld (Conjunction a b) w = checkWorld a w && checkWorld b w
           checkWorld (Disjunction a b) w = checkWorld a w || checkWorld b w
           checkWorld (Implication a b) w = and [checkImpl a b v | v <- Set.toList (cone w)]
-
           checkImpl :: Formula -> Formula -> World -> Bool
           checkImpl a b w = not (checkWorld a w) || checkWorld b w
