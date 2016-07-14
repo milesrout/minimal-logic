@@ -8,11 +8,11 @@ import Text.Printf (printf)
 import Data.Set (Set, (\\))
 import qualified Data.Set as Set
 
-data Formula where
-    Proposition :: String -> Formula
-    Conjunction :: Formula -> Formula -> Formula
-    Disjunction :: Formula -> Formula -> Formula
-    Implication :: Formula -> Formula -> Formula
+data Formula
+    = Proposition String
+    | Conjunction Formula Formula
+    | Disjunction Formula Formula
+    | Implication Formula Formula
     deriving (Eq, Ord)
 
 (#&) :: Formula -> Formula -> Formula
