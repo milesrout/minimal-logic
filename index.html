@@ -3,7 +3,12 @@
 	<head>
 		<meta charset="utf-8">
 		<meta name="description" content="Proof assistant and model checker for minimal logic">
-		<meta name="author" content="Miles Rout">
+		<script type="text/x-mathjax-config">
+MathJax.Hub.Config({tex2jax: {inlineMath: [['$','$'], ['\\(','\\)']]}});
+		</script>
+		<script type="text/javascript" async
+					src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS_CHTML">
+		</script> 	<meta name="author" content="Miles Rout">
 		<style type="text/css">
 			kbd, samp, code { font-family: "Monaco", "Source Code Pro", monospace; }
 			body { margin: 1em auto; max-width: 40em; font-family: sans-serif; }
@@ -22,6 +27,29 @@
 			<p>Part of this programme is a proof assistant. This lets you construct
 			proofs of statements in minimal logic composably. It also keeps track of
 			assumptions for you.</p>
+			<h3>Example</h3>
+      <p>The Curry-Howard correspondence can be interpreted as an equivalence
+      between types and deductions where the composition of functions
+      corresponds to the composition of implications.</p>
+			<pre><code>import Minimal
+
+compose :: Deduction -&gt; Deduction -&gt; Proof
+compose dAB dBC = do
+    -- get the antecedent of the conclusion of dAB
+    let (Implication a _) = conclusion dAB
+    dA  &lt;- assume a
+    dB  &lt;- implElim dA dAB
+    dC  &lt;- implElim dB dBC
+    dAC &lt;- implIntro a dC
+    return dAC
+
+pAB, pBC :: Proof
+pAC = do
+    dAB &lt;- pAB
+    dBC &lt;- pBC
+    compose dAB dBC
+</code></pre>
+    
 		</section>
 
 		<section id="model-checker">
@@ -29,6 +57,22 @@
 			<p>The other half is the model checker. This lets you construct models
 			and then check whether formulae are or are not forced by those
 			models.</p>
+      <h3>Example</h3>
+      <p>A model with only a single world is a model of classical logic.</p>
+      <pre><code>import Model
+
+exampleWorld :: World
+exampleWorld = World
+    { forcedProps = Set.singleton (Proposition "P")
+    , childWorlds = Set.empty
+    , name = "W"
+    }
+
+example :: Model
+example = Model
+    { abnormalWorlds = Set.empty
+    , rootWorld = exampleWorld
+    }</code></pre>
 		</section>
 
 		<section>
