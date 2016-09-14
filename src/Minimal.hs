@@ -1,6 +1,19 @@
-{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE ViewPatterns, PatternSynonyms #-}
 
-module Minimal where
+module Minimal (
+    Formula(..),
+    (#&), (#|), (#>),
+    bot,
+    pattern Bottom,
+    pattern Not,
+    Deduction(..),
+    Proof(..),
+    runProof, evalProof, throwError,
+    assume,
+    implIntro, implElim,
+    conjIntro, leftConjElim, rightConjElim,
+    disjElim, leftDisjIntro, rightDisjIntro,
+    ) where
 
 import Control.Monad.Except
 import Data.Set (Set, (\\))
@@ -25,6 +38,7 @@ a #| b = Disjunction a b
 a #> b = Implication a b
 
 -- These 'pattern synonyms' allow pattern-matching on Bottom and (Not f). 
+bot = "\x22A5"
 pattern Bottom = Proposition "\x22A5"
 pattern Not f = Implication f Bottom
 
@@ -48,15 +62,20 @@ type Proof = Except String Deduction
 runProof :: Proof -> Either String Deduction
 runProof = runExcept
 
+evalProof :: Proof -> Deduction
+evalProof p = case runProof p of
+    (Right d) -> d
+    _         -> error "evalProof run on invalid Proof"
+
 -- The quoted versions of these functions are ones that can't fail, so return
 -- Deduction instead of Proof. Unquoted versions are defined below that return
 -- a Proof for consistency.
 
-assume' :: Formula -> Deduction
-assume' f = Deduction (Set.singleton f) f
+assume :: Formula -> Proof
+assume f = return (Deduction (Set.singleton f) f)
 
-implIntro' :: Formula -> Deduction -> Deduction
-implIntro' f d = Deduction (Set.delete f a) (f #> c)
+implIntro :: Formula -> Deduction -> Proof
+implIntro f d = return (Deduction (Set.delete f a) (f #> c))
     where a = assumptions d
           c = conclusion d
 
@@ -66,86 +85,40 @@ implElim (Deduction aA a') (Deduction aAtoB (Implication a b))
     | otherwise = throwError "conclusion of first argument must be the antecedent of the conclusion of the second argument"
 implElim _ _ = throwError "second argument to implElim must be an implication"
 
-conjIntro' :: Deduction -> Deduction -> Deduction
-conjIntro' l r = Deduction (Set.union al ar) (cl #& cr)
+conjIntro :: Deduction -> Deduction -> Proof
+conjIntro l r = return (Deduction (Set.union al ar) (cl #& cr))
     where al = assumptions l
           ar = assumptions r
           cl = conclusion l
           cr = conclusion r
 
-leftDisjIntro' :: Formula -> Deduction -> Deduction
-leftDisjIntro' f d = Deduction (assumptions d) (f #| r)
+leftDisjIntro :: Formula -> Deduction -> Proof
+leftDisjIntro f d = return (Deduction (assumptions d) (f #| r))
     where r = conclusion d
 
-rightDisjIntro' :: Deduction -> Formula -> Deduction
-rightDisjIntro' d f = Deduction (assumptions d) (l #| f)
+rightDisjIntro :: Deduction -> Formula -> Proof
+rightDisjIntro d f = return (Deduction (assumptions d) (l #| f))
     where l = conclusion d
 
 leftConjElim :: Deduction -> Proof
 leftConjElim d = case (conclusion d) of
     (Conjunction _ r) -> return d { conclusion = r }
-    _                 -> throwError "argument must be a conjunction"
+    _ -> throwError "argument must be a conjunction"
 
 rightConjElim :: Deduction -> Proof
 rightConjElim d = case (conclusion d) of
     (Conjunction l _) -> return d { conclusion = l }
-    _                 -> throwError "argument must be a conjunction"
+    _ -> throwError "argument must be a conjunction"
 
 disjElim :: Deduction -> Deduction -> Deduction -> Proof
-disjElim avb atoc btoc
-    | conclusion atoc == conclusion btoc = disjElimSame
+-- matches if the conclusion of the first argument is a disjunction.
+-- then binds the whole deduction to `aOrB'.
+disjElim aOrB@(conclusion -> (Disjunction a b)) aToC bToC
+    | conclusion aToC == conclusion bToC = return (Deduction assums conc)
     | otherwise = throwError "conclusion of second arg and conclusion of third arg must be equal"
-    where disjElimSame = case (conclusion avb) of
-              (Disjunction a b) -> return (Deduction (Set.unions [g, hA, hB]) c)
-                where g = assumptions avb
-                      hA = assumptions atoc \\ Set.singleton a
-                      hB = assumptions btoc \\ Set.singleton b
-                      c = conclusion atoc
-              _ -> throwError "conclusion of first arg must be a disjunction"
-
--- These allow for a more consistent syntax when doing proofs
-assume :: Formula -> Proof
-assume f = return $ assume' f
-
-conjIntro :: Deduction -> Deduction -> Proof
-conjIntro l r = return $ conjIntro' l r
-
-implIntro :: Formula -> Deduction -> Proof
-implIntro f d = return $ implIntro' f d
-
-leftDisjIntro :: Formula -> Deduction -> Proof
-leftDisjIntro f d = return $ leftDisjIntro' f d
-
-rightDisjIntro :: Deduction -> Formula -> Proof
-rightDisjIntro d f = return $ rightDisjIntro' d f
-
-exampleVacuousIntro = do
-    let p = Proposition "P"
-    let q = Proposition "Q"
-    dQ <- assume q
-    implIntro p dQ
-
-exampleTransitive a dAtoB dBtoC = do
-    dA <- assume a
-    dB <- implElim dA dAtoB
-    dC <- implElim dB dBtoC
-    implIntro a dC
-
-pp :: Formula -> Formula -> Formula
-pp a b = ((a #> b) #> a) #> a
-
-examplePPimplWT = do
-    let phi = Proposition "phi"
-    let psi = Proposition "psi"
-    let notPhiToPsi = (Not (phi #> psi))
-    dNotPhi         <- assume (Not phi)
-    dBotToPsi       <- assume (Bottom #> psi)
-    dPhiToPsi       <- exampleTransitive phi dNotPhi dBotToPsi
-    dNotPhiToPsi    <- assume notPhiToPsi
-    dBot            <- implElim dPhiToPsi dNotPhiToPsi
-    dBotToPsiToBot  <- implIntro (Bottom #> psi) dBot
-    dPP             <- assume (pp Bottom psi)
-    dBot'           <- implElim dBotToPsiToBot dPP
-    dNotNotPhiToPsi <- implIntro notPhiToPsi dBot'
-    implIntro (Not phi) dNotNotPhiToPsi
-
+        where aAorB = assumptions aOrB
+              aAtoC = a `Set.delete` assumptions aToC
+              aBtoC = b `Set.delete` assumptions bToC
+              assums = Set.unions [aAorB, aAtoC, aBtoC]
+              conc = conclusion aToC
+disjElim _ _ _ = throwError "conclusion of first arg must be a disjunction"

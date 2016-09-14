@@ -1,11 +1,45 @@
 module Main where
 
+import Control.Monad
 import Data.List
 import qualified Data.Set as Set
 import Data.Set (Set)
 
 import Minimal
 import Model
+
+exampleVacuousIntro = do
+    let p = Proposition "P"
+    let q = Proposition "Q"
+    dQ <- assume q
+    implIntro p dQ
+
+exampleTransitive a dAtoB dBtoC = do
+    dA <- assume a
+    dB <- implElim dA dAtoB
+    dC <- implElim dB dBtoC
+    implIntro a dC
+
+pp :: Formula -> Formula -> Formula
+pp a b = ((a #> b) #> a) #> a
+
+phi, psi, notPhiToPsi :: Formula
+phi = Proposition "phi"
+psi = Proposition "psi"
+notPhiToPsi = Not (phi #> psi)
+
+examplePPimplWT = do
+    dNotPhi         <- assume (Not phi)
+    dBotToPsi       <- assume (Bottom #> psi)
+    dPhiToPsi       <- exampleTransitive phi dNotPhi dBotToPsi
+    dNotPhiToPsi    <- assume notPhiToPsi
+    dBot            <- implElim dPhiToPsi dNotPhiToPsi
+    dBotToPsiToBot  <- implIntro (Bottom #> psi) dBot
+    dPP             <- assume (pp Bottom psi)
+    dBot'           <- implElim dBotToPsiToBot dPP
+    dNotNotPhiToPsi <- implIntro notPhiToPsi dBot'
+    implIntro (Not phi) dNotNotPhiToPsi
+
 
 fP, fQ :: Formula
 fP = Proposition "P"
@@ -59,6 +93,25 @@ conjPairs p n = [p i #& p j | (i,j) <- pairs n]
 
 pairs :: Integer -> [(Integer, Integer)]
 pairs n = [(i,j) | i <- [1..n], j <- [1..n], i < j]
+
+compose :: Deduction -> Deduction -> Proof
+compose dAB dBC = do
+    -- get the antecedent of the conclusion of dAB
+    let (Implication a _) = conclusion dAB
+    dA  <- assume a
+    dB  <- implElim dA dAB
+    dC  <- implElim dB dBC
+    dAC <- implIntro a dC
+    return dAC
+
+pAB, pBC, pAC :: Proof
+pAB = assume (Proposition "A" #> Proposition "B")
+pBC = assume (Proposition "B" #> Proposition "C")
+pAC = do
+    dAB <- pAB
+    dBC <- pBC
+    compose dAB dBC
+
 
 main :: IO ()
 main = putStrLn "Hello, world!"
