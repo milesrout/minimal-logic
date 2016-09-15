@@ -1,21 +1,24 @@
 {-# LANGUAGE ViewPatterns, PatternSynonyms #-}
+{-# LANGUAGE DeriveFunctor #-}
 
-module Minimal (
-    Formula(..),
-    (#&), (#|), (#>),
-    bot,
-    pattern Bottom,
-    pattern Not,
-    Deduction(..),
-    Proof(..),
-    runProof, evalProof, throwError,
-    assume,
-    implIntro, implElim,
-    conjIntro, leftConjElim, rightConjElim,
-    disjElim, leftDisjIntro, rightDisjIntro,
-    ) where
+module Minimal where
+--module Minimal (
+--    Formula(..),
+--    (#&), (#|), (#>),
+--    bot,
+--    pattern Bottom,
+--    pattern Not,
+--    Deduction(..),
+--    Proof(..),
+--    runProof, evalProof, throwError,
+--    assume,
+--    implIntro, implElim,
+--    conjIntro, leftConjElim, rightConjElim,
+--    disjElim, leftDisjIntro, rightDisjIntro,
+--    ) where
 
 import Control.Monad.Except
+import Control.Monad.Free
 import Data.Set (Set, (\\))
 import qualified Data.Set as Set
 import Text.Printf (printf)
@@ -52,73 +55,33 @@ instance Show Formula where
     show (Disjunction a b) = printf "(%s \x2228 %s)" (show a) (show b)
     show (Implication a b) = printf "(%s \x2192 %s)" (show a) (show b)
 
-data Deduction = Deduction { assumptions :: Set Formula
-                           , conclusion  :: Formula
-                           } deriving (Show)
+data Proof = Proof { assumptions :: Set Formula
+                   , conclusion  :: Formula
+                   } deriving (Show)
 
--- Except is like Either (sum type) but explicitly for representing errors.
-type Proof = Except String Deduction
+data DeductionF next
+    = Assume Formula (Proof -> next)
+    | ImplElim Proof Proof (Proof -> next)
+    | ImplIntro Formula Proof (Proof -> next)
+    deriving (Functor)
 
-runProof :: Proof -> Either String Deduction
-runProof = runExcept
+type Deduction = Free DeductionF
 
-evalProof :: Proof -> Deduction
-evalProof p = case runProof p of
-    (Right d) -> d
-    _         -> error "evalProof run on invalid Proof"
+assume :: Formula -> Deduction Proof
+assume f = liftF (Assume f id)
 
--- The quoted versions of these functions are ones that can't fail, so return
--- Deduction instead of Proof. Unquoted versions are defined below that return
--- a Proof for consistency.
+implElim :: Proof -> Proof -> Deduction Proof
+implElim maj min = liftF (ImplElim maj min id)
 
-assume :: Formula -> Proof
-assume f = return (Deduction (Set.singleton f) f)
+implIntro :: Formula -> Proof -> Deduction Proof
+implIntro f prem = liftF (ImplIntro f prem id)
 
-implIntro :: Formula -> Deduction -> Proof
-implIntro f d = return (Deduction (Set.delete f a) (f #> c))
-    where a = assumptions d
-          c = conclusion d
+blah :: Deduction Proof
+blah = do
+    dA  <- assume (Proposition "A")
+    dNA <- assume (Not (Proposition "A"))
+    dB  <- implElim dNA dA
+    implIntro (Not (Proposition "A")) dB
 
-implElim :: Deduction -> Deduction -> Proof
-implElim (Deduction aA a') (Deduction aAtoB (Implication a b))
-    | (a' == a) = return (Deduction (Set.union aA aAtoB) b)
-    | otherwise = throwError "conclusion of first argument must be the antecedent of the conclusion of the second argument"
-implElim _ _ = throwError "second argument to implElim must be an implication"
-
-conjIntro :: Deduction -> Deduction -> Proof
-conjIntro l r = return (Deduction (Set.union al ar) (cl #& cr))
-    where al = assumptions l
-          ar = assumptions r
-          cl = conclusion l
-          cr = conclusion r
-
-leftDisjIntro :: Formula -> Deduction -> Proof
-leftDisjIntro f d = return (Deduction (assumptions d) (f #| r))
-    where r = conclusion d
-
-rightDisjIntro :: Deduction -> Formula -> Proof
-rightDisjIntro d f = return (Deduction (assumptions d) (l #| f))
-    where l = conclusion d
-
-leftConjElim :: Deduction -> Proof
-leftConjElim d = case (conclusion d) of
-    (Conjunction _ r) -> return d { conclusion = r }
-    _ -> throwError "argument must be a conjunction"
-
-rightConjElim :: Deduction -> Proof
-rightConjElim d = case (conclusion d) of
-    (Conjunction l _) -> return d { conclusion = l }
-    _ -> throwError "argument must be a conjunction"
-
-disjElim :: Deduction -> Deduction -> Deduction -> Proof
--- matches if the conclusion of the first argument is a disjunction.
--- then binds the whole deduction to `aOrB'.
-disjElim aOrB@(conclusion -> (Disjunction a b)) aToC bToC
-    | conclusion aToC == conclusion bToC = return (Deduction assums conc)
-    | otherwise = throwError "conclusion of second arg and conclusion of third arg must be equal"
-        where aAorB = assumptions aOrB
-              aAtoC = a `Set.delete` assumptions aToC
-              aBtoC = b `Set.delete` assumptions bToC
-              assums = Set.unions [aAorB, aAtoC, aBtoC]
-              conc = conclusion aToC
-disjElim _ _ _ = throwError "conclusion of first arg must be a disjunction"
+showDeduction :: (Show a, Show r) => Free (DeductionF a) r -> String
+showDeduction (Free (Assume f x)) = printf "assume %s\n %s" 
