@@ -1,87 +1,95 @@
-{-# LANGUAGE ViewPatterns, PatternSynonyms #-}
-{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Minimal where
---module Minimal (
---    Formula(..),
---    (#&), (#|), (#>),
---    bot,
---    pattern Bottom,
---    pattern Not,
---    Deduction(..),
---    Proof(..),
---    runProof, evalProof, throwError,
---    assume,
---    implIntro, implElim,
---    conjIntro, leftConjElim, rightConjElim,
---    disjElim, leftDisjIntro, rightDisjIntro,
---    ) where
 
-import Control.Monad.Except
 import Control.Monad.Free
-import Data.Set (Set, (\\))
-import qualified Data.Set as Set
-import Text.Printf (printf)
+import Text.Printf
 
-data Formula
-    = Proposition String
-    | Conjunction Formula Formula
-    | Disjunction Formula Formula
-    | Implication Formula Formula
-    deriving (Eq, Ord)
+data Formula a where
+    Prop :: String -> Formula ()
+    Impl :: Formula a -> Formula b -> Formula (a -> b)
+    Conj :: Formula a -> Formula b -> Formula (a,b)
+    Disj :: Formula a -> Formula b -> Formula (Either a b)
 
--- These are just shorthand
-(#&) :: Formula -> Formula -> Formula
-a #& b = Conjunction a b
+instance Show (Formula a) where
+    show (Prop s)   = s
+    show (Not f)    = printf "\x00AC%s" (show f)
+    show (Conj a b) = printf "(%s \x2227 %s)" (show a) (show b)
+    show (Disj a b) = printf "(%s \x2228 %s)" (show a) (show b)
+    show (Impl a b) = printf "(%s \x2192 %s)" (show a) (show b)
 
-(#|) :: Formula -> Formula -> Formula
-a #| b = Disjunction a b
+a = Prop "A"
+b = Prop "A"
+p = Prop "P"
+q = Prop "Q"
 
-(#>) :: Formula -> Formula -> Formula
-a #> b = Implication a b
+a #> b = Impl a b
+a #& b = Conj a b
+a #| b = Disj a b
 
--- These 'pattern synonyms' allow pattern-matching on Bottom and (Not f). 
-bot = "\x22A5"
-pattern Bottom = Proposition "\x22A5"
-pattern Not f = Implication f Bottom
+pattern Bot = Prop "\x0020"
+pattern Not a = Impl a Bot
 
--- The Unicode literals are the Unicode equivalents of LaTeX's \neg (\lnot),
--- \wedge (\land), \vee (\lor) and \to respectively.
--- This specifies how a Formula should be converted into a string.
-instance Show Formula where
-    show (Proposition s)   = s
-    show (Not f)           = printf "\x00AC%s" (show f)
-    show (Conjunction a b) = printf "(%s \x2227 %s)" (show a) (show b)
-    show (Disjunction a b) = printf "(%s \x2228 %s)" (show a) (show b)
-    show (Implication a b) = printf "(%s \x2192 %s)" (show a) (show b)
+data DeductionF next where
+    Assume     :: Formula a -> (a -> next) -> DeductionF next
+    ImplElim   :: (a -> b) -> a -> (b -> next) -> DeductionF next
+    ImplIntro  :: b -> Formula a -> ((a -> b) -> next) -> DeductionF next
+    ConjIntro  :: a -> b -> ((a,b) -> next) -> DeductionF next
+    ConjElimL  :: (a,b) -> (b -> next) -> DeductionF next
+    ConjElimR  :: (a,b) -> (a -> next) -> DeductionF next
+    DisjIntroL :: a -> Formula b -> (Either a b -> next) -> DeductionF next
+    DisjIntroR :: Formula a -> b -> (Either a b -> next) -> DeductionF next
+    DisjElim   :: Either a b -> (a -> c) -> (b -> c) -> (c -> next) -> DeductionF next
 
-data Proof = Proof { assumptions :: Set Formula
-                   , conclusion  :: Formula
-                   } deriving (Show)
-
-data DeductionF next
-    = Assume Formula (Proof -> next)
-    | ImplElim Proof Proof (Proof -> next)
-    | ImplIntro Formula Proof (Proof -> next)
-    deriving (Functor)
+-- We cannot use -XDeriveFunctor to generate this automatically, as DeductionF
+-- is a generalised algebraic data type (GADT).
+instance Functor DeductionF where
+    fmap f (Assume p g) = Assume p (f . g)
+    fmap f (ImplElim ab a g) = ImplElim ab a (f . g)
+    fmap f (ImplIntro b a g) = ImplIntro b a (f . g)
+    fmap f (ConjIntro a b g) = ConjIntro a b (f . g)
+    fmap f (ConjElimL ab g) = ConjElimL ab (f . g)
+    fmap f (ConjElimR ab g) = ConjElimR ab (f . g)
+    fmap f (DisjIntroL a q g) = DisjIntroL a q (f . g)
+    fmap f (DisjIntroR a q g) = DisjIntroR a q (f . g)
+    fmap f (DisjElim ab ac bc g) = DisjElim ab ac bc (f . g)
 
 type Deduction = Free DeductionF
 
-assume :: Formula -> Deduction Proof
-assume f = liftF (Assume f id)
+assume :: Formula a -> Deduction a
+assume p = liftF (Assume p id)
 
-implElim :: Proof -> Proof -> Deduction Proof
-implElim maj min = liftF (ImplElim maj min id)
+implElim :: (a -> b) -> a -> Deduction b
+implElim ab a = liftF (ImplElim ab a id)
 
-implIntro :: Formula -> Proof -> Deduction Proof
-implIntro f prem = liftF (ImplIntro f prem id)
+implIntro :: b -> Formula a -> Deduction (a -> b)
+implIntro b a = liftF (ImplIntro b a id)
 
-blah :: Deduction Proof
+conjIntro :: a -> b -> Deduction (a,b)
+conjIntro a b = liftF (ConjIntro a b id)
+
+conjElimL :: (a,b) -> Deduction b
+conjElimL ab = liftF (ConjElimL ab id)
+
+conjElimR :: (a,b) -> Deduction a
+conjElimR ab = liftF (ConjElimR ab id)
+
+disjIntroL :: a -> Formula b -> Deduction (Either a b)
+disjIntroL a q = liftF (DisjIntroL a q id)
+
+disjIntroR :: Formula a -> b -> Deduction (Either a b)
+disjIntroR a q = liftF (DisjIntroR a q id)
+
+disjElim :: Either a b -> (a -> c) -> (b -> c) -> Deduction c
+disjElim ab ac bc = liftF (DisjElim ab ac bc id)
+
 blah = do
-    dA  <- assume (Proposition "A")
-    dNA <- assume (Not (Proposition "A"))
-    dB  <- implElim dNA dA
-    implIntro (Not (Proposition "A")) dB
-
-showDeduction :: (Show a, Show r) => Free (DeductionF a) r -> String
-showDeduction (Free (Assume f x)) = printf "assume %s\n %s" 
+    let p = Prop "P"
+    let q = Prop "Q"
+    dP <- assume p
+    dQ <- assume q
+    dPQ <- conjIntro dP dQ
+    return dPQ

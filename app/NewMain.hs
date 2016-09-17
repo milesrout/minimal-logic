@@ -6,7 +6,6 @@ import qualified Data.Set as Set
 import Data.Set (Set)
 
 import Minimal
-import Model
 
 --doubleNegElim :: Deduction -> Proof
 --doubleNegElim dNNP = case conclusion dNNP of
