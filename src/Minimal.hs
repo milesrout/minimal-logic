@@ -6,6 +6,8 @@
 module Minimal where
 
 import Control.Monad.Free
+import Data.Set (Set, (\\))
+import qualified Data.Set as Set
 import Text.Printf
 
 data Formula a where
@@ -33,20 +35,20 @@ a #| b = Disj a b
 pattern Bot = Prop "\x0020"
 pattern Not a = Impl a Bot
 
-data DeductionF next where
-    Assume     :: Formula a -> (a -> next) -> DeductionF next
-    ImplElim   :: (a -> b) -> a -> (b -> next) -> DeductionF next
-    ImplIntro  :: b -> Formula a -> ((a -> b) -> next) -> DeductionF next
-    ConjIntro  :: a -> b -> ((a,b) -> next) -> DeductionF next
-    ConjElimL  :: (a,b) -> (b -> next) -> DeductionF next
-    ConjElimR  :: (a,b) -> (a -> next) -> DeductionF next
-    DisjIntroL :: a -> Formula b -> (Either a b -> next) -> DeductionF next
-    DisjIntroR :: Formula a -> b -> (Either a b -> next) -> DeductionF next
-    DisjElim   :: Either a b -> (a -> c) -> (b -> c) -> (c -> next) -> DeductionF next
+data DeductionF f next where
+    Assume     :: Formula a -> (f a -> next) -> DeductionF f next
+    ImplElim   :: f (a -> b) -> f a -> (f b -> next) -> DeductionF f next
+    ImplIntro  :: f b -> Formula a -> (f (a -> b) -> next) -> DeductionF f next
+    ConjIntro  :: f a -> f b -> (f (a,b) -> next) -> DeductionF f next
+    ConjElimL  :: f (a,b) -> (f b -> next) -> DeductionF f next
+    ConjElimR  :: f (a,b) -> (f a -> next) -> DeductionF f next
+    DisjIntroL :: f a -> Formula b -> (f (Either a b) -> next) -> DeductionF f next
+    DisjIntroR :: Formula a -> f b -> (f (Either a b) -> next) -> DeductionF f next
+    DisjElim   :: f (Either a b) -> f (a -> c) -> f (b -> c) -> (f c -> next) -> DeductionF f next
 
 -- We cannot use -XDeriveFunctor to generate this automatically, as DeductionF
 -- is a generalised algebraic data type (GADT).
-instance Functor DeductionF where
+instance Functor (DeductionF f) where
     fmap f (Assume p g) = Assume p (f . g)
     fmap f (ImplElim ab a g) = ImplElim ab a (f . g)
     fmap f (ImplIntro b a g) = ImplIntro b a (f . g)
@@ -54,42 +56,88 @@ instance Functor DeductionF where
     fmap f (ConjElimL ab g) = ConjElimL ab (f . g)
     fmap f (ConjElimR ab g) = ConjElimR ab (f . g)
     fmap f (DisjIntroL a q g) = DisjIntroL a q (f . g)
-    fmap f (DisjIntroR a q g) = DisjIntroR a q (f . g)
+    fmap f (DisjIntroR p b g) = DisjIntroR p b (f . g)
     fmap f (DisjElim ab ac bc g) = DisjElim ab ac bc (f . g)
 
-type Deduction = Free DeductionF
+type Deduction f = Free (DeductionF f)
 
-assume :: Formula a -> Deduction a
+assume :: Formula a -> Deduction f (f a)
 assume p = liftF (Assume p id)
 
-implElim :: (a -> b) -> a -> Deduction b
+implElim :: f (a -> b) -> f a -> Deduction f (f b)
 implElim ab a = liftF (ImplElim ab a id)
 
-implIntro :: b -> Formula a -> Deduction (a -> b)
+implIntro :: f b -> Formula a -> Deduction f (f (a -> b))
 implIntro b a = liftF (ImplIntro b a id)
 
-conjIntro :: a -> b -> Deduction (a,b)
+conjIntro :: f a -> f b -> Deduction f (f (a,b))
 conjIntro a b = liftF (ConjIntro a b id)
 
-conjElimL :: (a,b) -> Deduction b
+conjElimL :: f (a,b) -> Deduction f (f b)
 conjElimL ab = liftF (ConjElimL ab id)
 
-conjElimR :: (a,b) -> Deduction a
+conjElimR :: f (a,b) -> Deduction f (f a)
 conjElimR ab = liftF (ConjElimR ab id)
 
-disjIntroL :: a -> Formula b -> Deduction (Either a b)
+disjIntroL :: f a -> Formula b -> Deduction f (f (Either a b))
 disjIntroL a q = liftF (DisjIntroL a q id)
 
-disjIntroR :: Formula a -> b -> Deduction (Either a b)
-disjIntroR a q = liftF (DisjIntroR a q id)
+disjIntroR :: Formula a -> f b -> Deduction f (f (Either a b))
+disjIntroR p b = liftF (DisjIntroR p b id)
 
-disjElim :: Either a b -> (a -> c) -> (b -> c) -> Deduction c
+disjElim :: f (Either a b) -> f (a -> c) -> f (b -> c) -> Deduction f (f c)
 disjElim ab ac bc = liftF (DisjElim ab ac bc id)
 
-blah = do
-    let p = Prop "P"
-    let q = Prop "Q"
-    dP <- assume p
-    dQ <- assume q
-    dPQ <- conjIntro dP dQ
-    return dPQ
+data Proof a = Proof { assumptions :: Set AnyFormula
+                     , conclusion  :: Formula a
+                     } deriving Show
+
+data AnyFormula = forall a. MkAF (Formula a)
+
+instance Ord AnyFormula where
+    x <= y = show x <= show y
+
+instance Eq AnyFormula where
+    x == y = show x == show y
+
+instance Show AnyFormula where
+    show (MkAF f) = show f
+
+interpret :: Deduction Proof (Proof a) -> Proof a
+interpret (Pure x) = x
+interpret (Free deduction) = case deduction of
+    (Assume f g)             -> interpret . g $ Proof (Set.singleton (MkAF f)) f
+    (ImplIntro dB fA g)      -> interpret . g $ Proof (Set.delete (MkAF fA) aB) (fA #> cB)
+        where aB = assumptions dB
+              cB = conclusion dB
+    (ImplElim dAB dA g)      -> interpret . g $ Proof (Set.union aAB aA) fB
+        where fB = case conclusion dAB of
+                (Impl _ b)   -> b
+              aAB = assumptions dAB
+              aA = assumptions dA
+    (ConjIntro dA dB g)      -> interpret . g $ Proof (Set.union aA aB) (fA #& fB)
+        where aA = assumptions dA
+              aB = assumptions dB
+              fA = conclusion dA
+              fB = conclusion dB
+    (ConjElimL dAB g)        -> interpret . g $ Proof aAB fB
+        where aAB = assumptions dAB
+              fB = case conclusion dAB of
+                (Conj _ b) -> b
+    (ConjElimR dAB g)        -> interpret . g $ Proof aAB fA
+        where aAB = assumptions dAB
+              fA = case conclusion dAB of
+                (Conj a _) -> a
+    (DisjIntroL dA fQ g)     -> interpret . g $ Proof aA (fA #| fQ)
+        where aA = assumptions dA
+              fA = conclusion dA
+    (DisjIntroR fP dB g)     -> interpret . g $ Proof aB (fP #| fB)
+        where aB = assumptions dB
+              fB = conclusion dB
+    (DisjElim dAB dAC dBC g) -> interpret . g $ Proof aC fC
+        where aAB = assumptions dAB
+              aAC = assumptions dAC
+              aBC = assumptions dBC
+              aC = Set.unions [aAB,aAC,aBC]
+              fC = case conclusion dAC of
+                (Impl _ c) -> c
