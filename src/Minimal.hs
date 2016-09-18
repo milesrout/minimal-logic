@@ -93,7 +93,7 @@ data Proof a = Proof { assumptions :: Set AnyFormula
                      , conclusion  :: Formula a
                      } deriving Show
 
-data AnyFormula = forall a. MkAF (Formula a)
+data AnyFormula = forall a. MkAF { fromAF :: Formula a }
 
 instance Ord AnyFormula where
     x <= y = show x <= show y

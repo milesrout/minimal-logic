@@ -8,6 +8,7 @@ import qualified Data.Set as Set
 import Data.Set (Set)
 
 import Minimal
+import Model
 
 dneImplAristotle :: Deduction f (f _)
 dneImplAristotle = do
