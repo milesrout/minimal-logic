@@ -8,6 +8,7 @@ module Minimal where
 import Control.Monad.Free
 import Data.Set (Set, (\\))
 import qualified Data.Set as Set
+import Data.Void
 import Text.Printf
 
 data Formula a where
@@ -38,7 +39,7 @@ pattern Not a = Impl a Bot
 data DeductionF f next where
     Assume     :: Formula a -> (f a -> next) -> DeductionF f next
     ImplElim   :: f (a -> b) -> f a -> (f b -> next) -> DeductionF f next
-    ImplIntro  :: f b -> Formula a -> (f (a -> b) -> next) -> DeductionF f next
+    ImplIntro  :: Formula a -> f b -> (f (a -> b) -> next) -> DeductionF f next
     ConjIntro  :: f a -> f b -> (f (a,b) -> next) -> DeductionF f next
     ConjElimL  :: f (a,b) -> (f b -> next) -> DeductionF f next
     ConjElimR  :: f (a,b) -> (f a -> next) -> DeductionF f next
@@ -51,7 +52,7 @@ data DeductionF f next where
 instance Functor (DeductionF f) where
     fmap f (Assume p g) = Assume p (f . g)
     fmap f (ImplElim ab a g) = ImplElim ab a (f . g)
-    fmap f (ImplIntro b a g) = ImplIntro b a (f . g)
+    fmap f (ImplIntro a b g) = ImplIntro a b (f . g)
     fmap f (ConjIntro a b g) = ConjIntro a b (f . g)
     fmap f (ConjElimL ab g) = ConjElimL ab (f . g)
     fmap f (ConjElimR ab g) = ConjElimR ab (f . g)
@@ -67,8 +68,8 @@ assume p = liftF (Assume p id)
 implElim :: f (a -> b) -> f a -> Deduction f (f b)
 implElim ab a = liftF (ImplElim ab a id)
 
-implIntro :: f b -> Formula a -> Deduction f (f (a -> b))
-implIntro b a = liftF (ImplIntro b a id)
+implIntro :: Formula a -> f b -> Deduction f (f (a -> b))
+implIntro a b = liftF (ImplIntro a b id)
 
 conjIntro :: f a -> f b -> Deduction f (f (a,b))
 conjIntro a b = liftF (ConjIntro a b id)
@@ -107,7 +108,7 @@ interpret :: Deduction Proof (Proof a) -> Proof a
 interpret (Pure x) = x
 interpret (Free deduction) = case deduction of
     (Assume f g)             -> interpret . g $ Proof (Set.singleton (MkAF f)) f
-    (ImplIntro dB fA g)      -> interpret . g $ Proof (Set.delete (MkAF fA) aB) (fA #> cB)
+    (ImplIntro fA dB g)      -> interpret . g $ Proof (Set.delete (MkAF fA) aB) (fA #> cB)
         where aB = assumptions dB
               cB = conclusion dB
     (ImplElim dAB dA g)      -> interpret . g $ Proof (Set.union aAB aA) fB
@@ -141,3 +142,9 @@ interpret (Free deduction) = case deduction of
               aC = Set.unions [aAB,aAC,aBC]
               fC = case conclusion dAC of
                 (Impl _ c) -> c
+
+blah :: Deduction f (f ())
+blah = do
+    dP <- assume (q #> p)
+    dQ <- assume q
+    implElim dP dQ
