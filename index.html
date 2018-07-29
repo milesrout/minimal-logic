@@ -11,7 +11,7 @@ MathJax.Hub.Config({tex2jax: {inlineMath: [['$','$'], ['\\(','\\)']]}});
 	    src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS_CHTML">
 		</script> 	<meta name="author" content="Miles Rout">
 		<style type="text/css">
-			kbd, samp, code { font-family: "Monaco", "Source Code Pro", monospace; }
+			kbd, samp, code { font-family: "Menlo", "Monaco", "Source Code Pro", monospace; }
 			body { margin: 1em auto; max-width: 40em; font-family: sans-serif; }
 			h1 { font-size: 2em; }
 			h2 { font-size: 1.625em; }
@@ -32,9 +32,9 @@ MathJax.Hub.Config({tex2jax: {inlineMath: [['$','$'], ['\\(','\\)']]}});
 			proofs of statements in minimal logic composably. It also keeps track of
 			assumptions for you.</p>
 			<h3>Example</h3>
-      <p>The Curry-Howard correspondence can be interpreted as an equivalence
-      between types and deductions where the composition of functions
-      corresponds to the composition of implications.</p>
+			<p>The Curry-Howard correspondence can be interpreted as an equivalence
+			between types and deductions where for example the composition of
+			functions corresponds to the composition of implications.</p>
 			<pre><code>import Minimal
 
 compose :: Deduction -&gt; Deduction -&gt; Proof
@@ -61,9 +61,9 @@ pAC = do
 			<p>The other half is the model checker. This lets you construct models
 			and then check whether formulae are or are not forced by those
 			models.</p>
-      <h3>Example</h3>
-      <p>A model with only a single world is a model of classical logic.</p>
-      <pre><code>import Model
+			<h3>Example</h3>
+			<p>A model with only a single world is a model of classical logic.</p>
+			<pre><code>import Model
 
 exampleWorld :: World
 exampleWorld = World
@@ -88,7 +88,7 @@ example = Model
 		<section>
 			<h2 id="links">Links</h2>
 			<ul>
-				<li><a href="http://miles.rout.co.nz">My website</a></li>
+				<li><a href="http://rout.nz">My website</a></li>
 				<li>
 					<a href="https://github.com/milesrout/minimal-logic">
 						<code>minimal-logic</code></a>&#8212;The repository for this project
